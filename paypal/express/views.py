@@ -1,4 +1,3 @@
-from __future__ import unicode_literals
 from decimal import Decimal as D
 import logging
 
@@ -10,13 +9,14 @@ from django.contrib import messages
 from django.contrib.auth.models import AnonymousUser
 from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect
+from django.db.models import get_model
 from django.utils.http import urlencode
 from django.utils import six
 from django.utils.translation import ugettext_lazy as _
 
 import oscar
 from oscar.apps.payment.exceptions import UnableToTakePayment
-from oscar.core.loading import get_class, get_model
+from oscar.core.loading import get_class
 from oscar.apps.shipping.methods import FixedPrice, NoShippingRequired
 
 from paypal.express.facade import (
@@ -84,7 +84,7 @@ class RedirectView(CheckoutSessionMixin, RedirectView):
             # Transaction successfully registered with PayPal.  Now freeze the
             # basket so it can't be edited while the customer is on the PayPal
             # site.
-            basket.freeze()
+            #basket.freeze()
 
             logger.info("Basket #%s - redirecting to %s", basket.id, url)
 
@@ -119,7 +119,11 @@ class RedirectView(CheckoutSessionMixin, RedirectView):
         else:
             shipping_methods = Repository().get_shipping_methods(
                 user=user, basket=basket)
-            params['shipping_methods'] = shipping_methods
+            # params['shipping_methods'] = shipping_methods
+            shipping_method = self.get_shipping_method(basket)
+            if shipping_method:
+                params['shipping_methods'].append(shipping_method)
+        print "PAYPALLLL SHIPPINGGGG PARAMS", params
 
         if settings.DEBUG:
             # Determine the localserver's hostname to use when
@@ -216,7 +220,8 @@ class SuccessResponseView(PaymentDetailsView):
     def load_frozen_basket(self, basket_id):
         # Lookup the frozen basket that this txn corresponds to
         try:
-            basket = Basket.objects.get(id=basket_id, status=Basket.FROZEN)
+            basket = Basket.objects.get(id=basket_id) #, status=Basket.FROZEN)
+            basket = self.request.basket
         except Basket.DoesNotExist:
             return None
 
@@ -281,6 +286,12 @@ class SuccessResponseView(PaymentDetailsView):
         return self.submit(**submission)
 
     def build_submission(self, **kwargs):
+        print "PAYPAL SUBMISSION KWARGSS", kwargs
+        basket = self.request.basket
+        basket.calculate_tax(
+            self.get_shipping_address(basket)
+        )
+        print "\n\n\nTOTAL TAX!! ", basket.total_tax, basket.is_tax_known, basket.id
         submission = super(
             SuccessResponseView, self).build_submission(**kwargs)
         # Pass the user email so it can be stored with the order
@@ -289,6 +300,8 @@ class SuccessResponseView(PaymentDetailsView):
         submission['payment_kwargs']['payer_id'] = self.payer_id
         submission['payment_kwargs']['token'] = self.token
         submission['payment_kwargs']['txn'] = self.txn
+        print "PAYPALL SUBMISSIONN AFTERR", submission
+        print "\n\n\nTOTAL THE NEXT  TAX!! ", basket.total_tax, basket.is_tax_known, basket.id
         return submission
 
     # Warning: This method can be removed when we drop support for Oscar 0.6
@@ -338,6 +351,7 @@ class SuccessResponseView(PaymentDetailsView):
         elif len(parts) > 1:
             first_name = parts[0]
             last_name = " ".join(parts[1:])
+
         return ShippingAddress(
             first_name=first_name,
             last_name=last_name,
@@ -358,7 +372,6 @@ class SuccessResponseView(PaymentDetailsView):
 
         # Instantiate a new FixedPrice shipping method instance
         charge_incl_tax = D(self.txn.value('PAYMENTREQUEST_0_SHIPPINGAMT'))
-
         # Assume no tax for now
         charge_excl_tax = charge_incl_tax
         method = FixedPrice(charge_excl_tax, charge_incl_tax)
