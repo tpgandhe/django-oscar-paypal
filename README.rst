@@ -33,7 +33,7 @@ The package is released under the `New BSD license`_.
 Support
 -------
 
-Having problems or got a question?
+Have any problems or got a question?
 
 * Have a look at the sandbox site as this is a sample Oscar project
   integrated with both PayPal options.  See the `contributing guide`_ within the
